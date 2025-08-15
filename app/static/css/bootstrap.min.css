@@ -1,0 +1,42 @@
+
+
+table {
+    font-family: arial, sans-serif;
+    border-collapse: collapse;
+    width: 100%;
+ }
+ 
+ tr, td, th {
+    border: 1px solid #dddddd;
+    text-align: center;
+    padding: 8px;
+ }
+ 
+ tr:nth-child(even) {
+    background-color: #dddddd;
+ }
+
+/* 
+
+ .table{
+    margin:20px auto;
+  }
+   
+  tr>td:first-child{
+    background:rgb(25, 105, 243);
+    color:#fff;
+
+}
+   th{
+     background:rgb(181, 230, 246);
+     color:#000000;
+     padding:10px 15px;
+    
+     text-align:center;
+     text-transform:capitalize;
+   }
+   td{
+      padding:10px 15px;
+      text-align:center;
+      color:#c61616;
+   } */

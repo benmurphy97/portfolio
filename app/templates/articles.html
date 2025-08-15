@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="container">
+    <h2>My Articles</h2>
+    <p>Here are some of my data science articles published on Medium:</p>
+    
+    {% for article in articles %}
+        <div class="article-card">
+            <h3>{{ article.title }}</h3>
+            <!-- <p>{{ article.description | safe }}</p> -->
+            <small>Published: {{ article.published }}</small><br>
+            <a href="{{ article.link }}" target="_blank" rel="noopener">Read on Medium →</a>
+        </div>
+    {% endfor %}
+</div>
+{% endblock %}
