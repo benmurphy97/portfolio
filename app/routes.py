@@ -4,7 +4,11 @@ from app.forms import LeagueIDForm
 import json
 from urllib.request import urlopen 
 import pandas as pd
+
 import feedparser
+from bs4 import BeautifulSoup  # for parsing HTML
+
+from datetime import datetime
 
 @app.route('/')
 @app.route('/home')
@@ -21,15 +25,26 @@ def articles():
 
     # Parse Medium RSS feed
     feed = feedparser.parse(feed_url)
+
     
     articles_data = []
     for entry in feed.entries:
-        print(entry.title)
+
+        # Parse HTML in summary to find first image
+        soup = BeautifulSoup(entry.summary, "html.parser")
+        img_tag = soup.find("img")
+        thumbnail = img_tag["src"] if img_tag else None
+
+        # Format date to remove time
+        published_date = datetime.strptime(entry.published, "%a, %d %b %Y %H:%M:%S %Z")
+        formatted_date = published_date.strftime("%d %b %Y")  # e.g. "02 Aug 2024"
+
         articles_data.append({
             "title": entry.title,
             "link": entry.link,
-            "description": entry.summary,
-            "published": entry.published
+            "description": soup.get_text(),  # plain text from summary
+            "published": formatted_date,
+            "thumbnail": thumbnail
         })
 
     return render_template("articles.html", articles=articles_data)
