@@ -164,8 +164,6 @@ def chart():
         standings.rename({'total': 'actual_points'}, inplace=True)
         standings.columns = ['Player', 'Actual Points', 'Expected Points', 'Over/Under Performance']
 
-        print(standings)
-
         standings = standings.sort_values(by='Expected Points', ascending=False)
 
         xlt_row_data=list(round(standings,2).values.tolist())
@@ -174,6 +172,7 @@ def chart():
         return render_template(
             template_name_or_list='chart.html',
             league_id=league_id,
+            league_name=league_name,
             data_dict=data_dict,
             labels=player_initials,
 
