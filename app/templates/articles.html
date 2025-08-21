@@ -1,17 +1,22 @@
 {% extends "base.html" %}
 {% block content %}
-
 <div class="container">
     <h2>My Articles</h2>
-    <p>Here are some of my data science articles published on Medium:</p>
-    
-    {% for article in articles %}
+    <p>Here are my latest Medium posts:</p>
+    <div class="articles-list">
+        {% for article in articles %}
         <div class="article-card">
-            <h3>{{ article.title }}</h3>
-            <!-- <p>{{ article.description | safe }}</p> -->
-            <small>Published: {{ article.published }}</small><br>
-            <a href="{{ article.link }}" target="_blank" rel="noopener">Read on Medium →</a>
+            {% if article.thumbnail %}
+            <img src="{{ article.thumbnail }}" alt="{{ article.title }}" class="article-thumb">
+            {% endif %}
+            <div class="article-content">
+                <h3>{{ article.title }}</h3>
+                <!-- <p>{{ article.description }}</p> -->
+                <small class="article-date">Published: {{ article.published }}</small>
+                <a href="{{ article.link }}" target="_blank" rel="noopener">Read on Medium →</a>
+            </div>
         </div>
-    {% endfor %}
+        {% endfor %}
+    </div>
 </div>
 {% endblock %}

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+    <h1 class="text-center">FPL Draft Insights</h1>
+    <form class="text-center" action="{{ url_for('chart') }}" method="post" validate>
+        {{ form.hidden_tag() }}
+        <p>
+            {{ form.league_id.label }}<br>
+            {{ form.league_id(size=32) }}<br>
+            {% for error in form.league_id.errors %}
+            <span style="color: red;">[{{ error }}]</span>
+            {% endfor %}
+        </p>
+        <p>{{ form.submit()}}</p>
+    </form>
+    <div>
+        <h1>How to find your FPL Draft League ID for the 25/26 season?</h1>
+        <p>
+        <h4>Step 1:</h4>Login to FPL Draft in your browser on your computer and go to your 'League' tab <a
+            href="https://draft.premierleague.com" target="_blank">https://draft.premierleague.com</a>
+        <br><br>
+        <h4>Step 2:</h4>Right click on a blank part of the page and click 'Inspect Element' and go to the 'Network' tab
+        <br><br>
+        <h4>Step 3:</h4>There is a filter that defaults to 'All', change this to 'XHR/Fetch'
+        <br><br>
+        <h4>Step 4:</h4>In the search box, type in either 'details' or 'league' and click on the result and you should
+        see some JSON with your league details in it
+        <br><br>
+        <h4>Step 5:</h4>Towards the top of this JSON you will see an 'id' value, this is your league id. It should be
+        just below the timezone of your draft
+
+        </p>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+<div class="row">
+    <div class="col-md-4"><!-- form/results will go here --></div>
+    <div>
+        <h1>Showing Visualisations for League ID: {{ league_id }} </h1>
+        <canvas id="scatter_avg_points" width="20" height="10"></canvas>
+    </div>
+</div>
+
+<br><br>
+
+<h1>Expected Standings</h1>
+
+   <table>
+      <thead>
+      <tr>
+          {% for col in column_names %}
+          <th>{{col}}</th>
+          {% endfor %}
+      </tr>
+      </thead>
+      <tbody>
+      {% for row in row_data %}
+      <tr>
+          {% for col, row_ in zip(column_names, row) %}
+          <td>{{row_}}</td>
+          {% endfor %}
+      </tr>
+      {% endfor %}
+      </tbody>
+  
+  </table>
+
+
+
+<script>
+    // Register the plugin to the Chart.js library
+    Chart.register(ChartDataLabels);
+
+    const ctx3 = document.getElementById('scatter_avg_points').getContext('2d');
+    var chart_labels = {{ labels | safe }}
+
+    const data_flask = {
+        //labels: chart_labels,
+        datasets: [{
+            // label: 'Scatter Dataset',
+            data: {{ data_dict | tojson() }},
+            backgroundColor: 'rgb(255, 99, 132)',
+            
+        }],
+    };
+    var scatterchart = new Chart(ctx3, {
+        type: 'scatter',
+        data: data_flask,
+        options: {
+            radius: 6,
+            pointBackgroundColor: '#62A6F8',
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'Average weekly points for vs points against',
+                    font: {
+                        size: 30
+                    },
+                    color: 'black'
+                },
+                datalabels: {
+                    display: true,
+                    align: 'start',
+                    color: '#214672',
+                    formatter: function(context, chart_obj) {
+                        return chart_labels[chart_obj.dataIndex]
+                    }
+                },
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                y: { 
+                    title: {
+                        display: true,
+                        text: 'Average points against',
+                        font: {
+                            size: 15
+                        },
+                        color: 'black'
+                    }
+                },
+                x: { 
+                    title: {
+                        display: true,
+                        text: 'Average points for',
+                        font: {
+                            size: 15
+                        },
+                        color: 'black'
+                    }
+                }
+            }
+        }
+    })
+</script>
+{% endblock %}

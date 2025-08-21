@@ -15,7 +15,7 @@ from datetime import datetime
 def home():
     return render_template('home.html', title='Home')
 
-
+# route for pulling my articles directly from Medium
 @app.route("/articles")
 def articles():
 
@@ -26,7 +26,6 @@ def articles():
     # Parse Medium RSS feed
     feed = feedparser.parse(feed_url)
 
-    
     articles_data = []
     for entry in feed.entries:
 
@@ -49,17 +48,15 @@ def articles():
 
     return render_template("articles.html", articles=articles_data)
 
-
-
-@app.route('/user_input_league_id', methods=['GET', 'POST'])
-def user_input_league_id():
+@app.route('/inputLeagueID', methods=['GET', 'POST'])
+def inputLeagueID():
 
     form = LeagueIDForm()
 
     if form.validate_on_submit():
         return redirect(url_for('chart'))
     
-    return render_template('user_input_league_id.html', title='League ID Input', form=form)
+    return render_template('inputLeagueID.html', title='League ID Input', form=form)
 
 
 @app.route('/chart', methods=['GET', 'POST'])
@@ -77,11 +74,12 @@ def chart():
         response = urlopen(url) 
     except:
         flash('The League ID enterred could not be loaded. Try again with a different League ID.')
-        return redirect(url_for('user_input_league_id'))
+        return redirect(url_for('inputLeagueID'))
     
     # storing the JSON response  
     data_json = json.loads(response.read())
 
+    league_name = data_json['league']['name']
     # if scoring is head-to-head format
     if data_json['league']['scoring'] == 'h':
 
@@ -111,9 +109,6 @@ def chart():
             data_dict.append(d)
 
         # expected league table
-
-
-
         matches = pd.DataFrame(data_json['matches'])
 
         matches1 = matches.loc[matches['finished']==True]
@@ -137,18 +132,14 @@ def chart():
 
         matches_df = pd.concat([matches1, matches2]).sort_values(by=['week', 'points_for'], ascending=[True, False]).reset_index(drop=True)
 
-
-
-        # get the rank of each players score in the gameweek
+        # get the rank of each player's score in the gameweek
         matches_df['points_for_week_rank'] = matches_df.groupby('week')['points_for'].rank(ascending=False, method='max')
         matches_df['points_against_week_rank'] = matches_df.groupby('week')['points_against'].rank(ascending=False, method='min')
-
 
         matches_df['player'] = matches_df['player'].apply(lambda x: id_name_map[x].strip())
 
         matches_df['number_of_opponents_beaten_in_week'] = 10-matches_df['points_for_week_rank']
         matches_df['number_of_opponents_drawn_to_in_week'] = matches_df[['week', 'points_for']].duplicated(keep=False).astype(int).values
-
 
         matches_df['prob_winning_week'] = matches_df['number_of_opponents_beaten_in_week'].apply(lambda x: x/9)
         matches_df['prob_losing_week'] = 1 - matches_df['prob_winning_week']
@@ -167,8 +158,6 @@ def chart():
         # get real standings
         standings = s_df[['player', 'total']].sort_values('player').reset_index(drop=True)
         standings['player'] = standings['player'].str.strip() # format player name
-
-
 
         standings['expected_points'] = expected_standing['expected_points']
         standings['over/under performance'] = standings['total']-standings['expected_points']
@@ -194,7 +183,7 @@ def chart():
     
     else:
         flash('Only head-to-head leagues are currently supported. Try again with a different League ID.')
-        return redirect(url_for('user_input_league_id'))
+        return redirect(url_for('inputLeagueID'))
 
 
 

@@ -3,8 +3,8 @@ from wtforms import SubmitField, IntegerField
 from wtforms.validators import InputRequired, NumberRange
 
 class LeagueIDForm(FlaskForm):
-    league_id = IntegerField('League ID', 
+    league_id = IntegerField('Enter League ID', 
                              validators=[InputRequired(), 
                                          NumberRange(min=1, 
-                                                     max=None)])
+                                                     max=999999999)])
     submit = SubmitField('Generate Insights')
