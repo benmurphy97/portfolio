@@ -3,7 +3,7 @@
 {% block content %}
 <div class="container">
     <h1 class="text-center">{{ league_name }} Current Standings</h1>
-    <table id="standingsTable" class="table table-striped table-bordered table-hover align-middle text-center">
+    <table id="cltStandingsTable" class="table table-striped table-bordered table-hover align-middle text-center">
         <thead>
             <tr>
                 {% for col in clt_col_names %}
@@ -33,7 +33,7 @@
 <br><br>
 <div class="container">
     <h1 class="text-center">Expected Standings</h1>
-    <table id="standingsTable" class="table table-striped table-bordered table-hover align-middle text-center">
+    <table id="xltStandingsTable" class="table table-striped table-bordered table-hover align-middle text-center">
         <thead>
             <tr>
                 {% for col in xlt_col_names %}
@@ -51,19 +51,36 @@
             {% endfor %}
         </tbody>
     </table>
+    <p>
+        Expected points are used to determine how lucky or unlucky each player is. For a head-to-head league in any given
+        gameweek, if you score the most fpl points, your expected points are 3 because no one can beat you. In a gameweek,
+        if you score the 3rd highest fpl points in a 10 person league, you beat 7 people but lose to 2 so your expected
+        points work out as 7/(7+2) * 3 = 2.33. Add the expected points for each player every week and you get the expected
+        league table. The over/under performance determines how lucky/unlucky players are.
+    </p>
 </div>
+
 {% endblock %}
 
 {% block scripts %}
 <script>
 $(document).ready(function() {
-    $('#standingsTable').DataTable({
+    $('#cltStandingsTable').DataTable({
         paging: false,
         searching: false,
         ordering: true,
         info: false,
         pageLength: 16,
-        "order": [[2, "desc"]]
+        order: [[1, "asc"]]
+    });
+
+    $('#xltStandingsTable').DataTable({
+        paging: false,
+        searching: false,
+        ordering: true,
+        info: false,
+        pageLength: 16,
+        order: [[2, "desc"]]
     });
 });
 
@@ -133,7 +150,7 @@ const scatterchart = new Chart(ctx3, {
                 title: {
                     display: true,
                     text: 'Average points against',
-                    font: { size: 15 },
+                    font: { size: 18 },
                     color: 'black'
                 }
             },
@@ -146,7 +163,7 @@ const scatterchart = new Chart(ctx3, {
                 title: {
                     display: true,
                     text: 'Average points for',
-                    font: { size: 15 },
+                    font: { size: 18 },
                     color: 'black'
                 }
             }

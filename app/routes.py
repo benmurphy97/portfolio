@@ -83,28 +83,45 @@ def chart():
     # if scoring is head-to-head format
     if data_json['league']['scoring'] == 'h':
 
-
-        # scatter plot
+        # create id:name lookup
         ids = [i['id'] for i in data_json['league_entries']]
         names = [i['short_name'] for i in data_json['league_entries']]
         id_name_map = {i:v for i,v in zip(ids,names)}
 
+
         # create dataframe of current standings
         s_df = pd.DataFrame(data_json['standings'])
-        print(s_df)
+
         s_df['player'] = s_df['league_entry'].apply(lambda x: id_name_map[x])
         player_initials = s_df['player'].values.tolist()
 
+        current_standings = s_df[['player', 'rank', 
+                                'matches_won', 'matches_lost', 'matches_drawn', 
+                                'points_for', 'points_against', 
+                                'total']].copy()
+        current_standings.rename(columns={'rank': 'Position',
+                                          'player': 'Player',
+                                          'matches_won': 'W',
+                                          'matches_lost': 'L',
+                                          'matches_drawn': 'D',
+                                          'points_for': 'FPL Points For',
+                                          'points_against': 'FPL Points Against',
+                                          'total': 'Points'}, inplace=True)
+        
+        clt_row_data=list(current_standings.values.tolist())
+        clt_col_names = current_standings.columns.values
+
+        # scatter plot
         s_df['average_points_for'] = s_df['points_for'] / (s_df['matches_won'] + s_df['matches_lost'] + s_df['matches_drawn'])
         s_df['average_points_against'] = s_df['points_against'] / (s_df['matches_won'] + s_df['matches_lost'] + s_df['matches_drawn'])
 
-        x = s_df['average_points_for'].values.tolist()
-        y = s_df['average_points_against'].values.tolist()
+        avg_pts_for = s_df['average_points_for'].values.tolist()
+        avg_pts_against = s_df['average_points_against'].values.tolist()
 
         del(s_df)
 
         data_dict = []
-        for i,v in zip(x, y):
+        for i,v in zip(avg_pts_for, avg_pts_against):
             d = {'x': i, 'y': v}
             data_dict.append(d)
 
@@ -153,20 +170,25 @@ def chart():
         s_df['player'] = s_df['league_entry'].apply(lambda x: id_name_map[x])
 
         # aggregate epected points by player
-        expected_standing = matches_df.groupby('player')['expected_points'].sum().round(1).reset_index()
+        expected_standing = matches_df.groupby('player')['expected_points'].sum().round(2).reset_index()
 
         # get real standings
-        standings = s_df[['player', 'total']].sort_values('player').reset_index(drop=True)
+        standings = s_df[['player', 'rank', 'total']].sort_values('player').reset_index(drop=True)
         standings['player'] = standings['player'].str.strip() # format player name
 
         standings['expected_points'] = expected_standing['expected_points']
         standings['over/under performance'] = standings['total']-standings['expected_points']
         standings.rename({'total': 'actual_points'}, inplace=True)
-        standings.columns = ['Player', 'Actual Points', 'Expected Points', 'Over/Under Performance']
+        standings.columns = ['Player', 'Actual Position', 'Actual Points', 'Expected Points', 'Over/Under Performance']
 
         standings = standings.sort_values(by='Expected Points', ascending=False)
 
-        xlt_row_data=list(round(standings,2).values.tolist())
+        # asign expected rank position
+        standings['Expected Position'] = standings['Expected Points'].rank(ascending=False).astype(int)
+
+        standings = standings[['Player', 'Expected Position', 'Expected Points', 'Actual Points', 'Actual Position', 'Over/Under Performance']]
+
+        xlt_row_data=list(round(standings,3).values.tolist())
         xlt_col_names = standings.columns.values
 
         return render_template(
@@ -176,8 +198,11 @@ def chart():
             data_dict=data_dict,
             labels=player_initials,
 
-            column_names=xlt_col_names, 
-            row_data=xlt_row_data,
+            clt_col_names = clt_col_names,
+            clt_row_data = clt_row_data,
+
+            xlt_col_names=xlt_col_names, 
+            xlt_row_data=xlt_row_data,
             zip=zip)
     
     else:
