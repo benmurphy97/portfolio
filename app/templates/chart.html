@@ -1,33 +1,32 @@
 {% extends "base.html" %}
+
 {% block content %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
-<!-- jQuery -->
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-
-<!-- DataTables -->
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css">
-<script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
-
-<script>
-$(document).ready(function() {
-    $('#standingsTable').DataTable({
-        "paging": true,
-        "searching": true,
-        "ordering": true,
-        "info": false,
-        "pageLength": 10
-    });
-});
-</script>
-
 <div class="container">
-    <div class="col-md-4"><!-- form/results will go here --></div>
+    <h1 class="text-center">{{ league_name }} Current Standings</h1>
+    <table id="standingsTable" class="table table-striped table-bordered table-hover align-middle text-center">
+        <thead>
+            <tr>
+                {% for col in clt_col_names %}
+                  <th scope="col" class="expected-table-custom-blue text-center">{{ col }}</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in clt_row_data %}
+              <tr>
+                  {% for col, row_ in zip(clt_col_names, row) %}
+                    <td>{{ row_ }}</td>
+                  {% endfor %}
+              </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+<br><br>
+<div class="container">
+    <h1 class="text-center">Average Points For vs Average Points Against</h1>
+    <div class="col-md-4"><!-- form/results if needed --></div>
     <div>
-        <h1 class="text-center"> {{ league_name }} </h1>
         <canvas id="scatter_avg_points" width="20" height="10"></canvas>
     </div>
 </div>
@@ -37,93 +36,122 @@ $(document).ready(function() {
     <table id="standingsTable" class="table table-striped table-bordered table-hover align-middle text-center">
         <thead>
             <tr>
-                {% for col in column_names %}
-                <th>{{col}}</th>
+                {% for col in xlt_col_names %}
+                  <th scope="col" class="expected-table-custom-blue text-center">{{ col }}</th>
                 {% endfor %}
             </tr>
         </thead>
         <tbody>
-            {% for row in row_data %}
-            <tr>
-                {% for col, row_ in zip(column_names, row) %}
-                <td>{{row_}}</td>
-                {% endfor %}
-            </tr>
+            {% for row in xlt_row_data %}
+              <tr>
+                  {% for col, row_ in zip(xlt_col_names, row) %}
+                    <td>{{ row_ }}</td>
+                  {% endfor %}
+              </tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
+{% endblock %}
 
-
+{% block scripts %}
 <script>
-    // Register the plugin to the Chart.js library
-    Chart.register(ChartDataLabels);
+$(document).ready(function() {
+    $('#standingsTable').DataTable({
+        paging: false,
+        searching: false,
+        ordering: true,
+        info: false,
+        pageLength: 16,
+        "order": [[2, "desc"]]
+    });
+});
 
-    const ctx3 = document.getElementById('scatter_avg_points').getContext('2d');
-    var chart_labels = {{ labels | safe }}
+// Register Chart.js plugin
+Chart.register(ChartDataLabels);
 
-    const data_flask = {
-        //labels: chart_labels,
-        datasets: [{
-            // label: 'Scatter Dataset',
-            data: {{ data_dict | tojson() }},
-    backgroundColor: 'rgb(255, 99, 132)',
-            
-        }],
-    };
-    var scatterchart = new Chart(ctx3, {
-        type: 'scatter',
-        data: data_flask,
-        options: {
-            radius: 6,
-            pointBackgroundColor: '#62A6F8',
-            plugins: {
-                title: {
-                    display: true,
-                    text: 'Average Points For vs Average Points Against',
-                    font: {
-                        size: 30
-                    },
-                    color: 'black'
-                },
-                datalabels: {
-                    display: true,
-                    align: 'start',
-                    color: '#214672',
-                    font: {
-                        size: 20
-                    },
-                    formatter: function (context, chart_obj) {
-                        return chart_labels[chart_obj.dataIndex]
-                    }
-                },
-                legend: {
-                    display: false
+const ctx3 = document.getElementById('scatter_avg_points').getContext('2d');
+const chart_labels = {{ labels | safe }};
+
+const data_flask = {
+    datasets: [{
+        data: {{ data_dict | tojson() }},
+        backgroundColor: 'rgb(255, 99, 132)',
+    }],
+};
+
+// Extract x and y values from your scatter dataset
+const xs = data_flask.datasets[0].data.map(pt => pt.x);
+const ys = data_flask.datasets[0].data.map(pt => pt.y);
+
+// Helper functions to round to nearest multiple of 5
+function roundUpToMultipleOf5(n) {
+    return Math.ceil((n+1) / 5) * 5;
+}
+function roundDownToMultipleOf5(n) {
+    return Math.floor((n-1) / 5) * 5;
+}
+
+// Compute axis limits without extra padding
+const xMin = roundDownToMultipleOf5(Math.min(...xs));
+const xMax = roundUpToMultipleOf5(Math.max(...xs));
+const yMin = roundDownToMultipleOf5(Math.min(...ys));
+const yMax = roundUpToMultipleOf5(Math.max(...ys));
+
+
+const scatterchart = new Chart(ctx3, {
+    type: 'scatter',
+    data: data_flask,
+    options: {
+        radius: 6,
+        pointBackgroundColor: '#62A6F8',
+        plugins: {
+            title: {
+                display: false,
+                text: 'Average Points For vs Average Points Against',
+                font: { size: 30 },
+                color: 'black'
+            },
+            datalabels: {
+                display: true,
+                align: 'start',
+                color: '#214672',
+                font: { size: 20 },
+                formatter: function(value, ctx) {
+                    return chart_labels[ctx.dataIndex];
                 }
             },
-            scales: {
-                y: {
-                    title: {
-                        display: true,
-                        text: 'Average points against',
-                        font: {
-                            size: 15
-                        },
-                        color: 'black'
-                    }
-                },
-                x: {
-                    title: {
-                        display: true,
-                        text: 'Average points for',
-                        font: {
-                            size: 15
-                        },
-                        color: 'black'
-                    }
+            legend: { display: false }
+        },
+        scales: {
+            y: {
+                min: yMin,
+                max: yMax,
+                ticks: {
+                        stepSize: 5   // force tick marks every 5
+                    },
+                title: {
+                    display: true,
+                    text: 'Average points against',
+                    font: { size: 15 },
+                    color: 'black'
+                }
+            },
+            x: {
+                min: xMin,
+                max: xMax,
+                ticks: {
+                        stepSize: 5   // force tick marks every 5
+                    },
+                title: {
+                    display: true,
+                    text: 'Average points for',
+                    font: { size: 15 },
+                    color: 'black'
                 }
             }
         }
-    })
+    }
+});
 </script>
 {% endblock %}
