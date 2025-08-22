@@ -6,7 +6,7 @@
     {% if title %}
     <title>{{ title }} - Ben Murphy</title>
     {% else %}
-    <title>Ben Murphy</title>
+    <title>Ben Murphy</title> 
     {% endif %}
 
     <!-- Bootstrap CSS -->
@@ -70,9 +70,15 @@
     {% block scripts %}{% endblock %}
 
   </body>
+<footer class="bg-light text-center text-muted py-3 mt-5">
+  <div class="container">
+    <p>© {{ current_year }} Ben Murphy. All rights reserved.</p>
+    <p>
+      <a href="https://github.com/benmurphy97" target="_blank" class="text-decoration-none text-muted me-2">GitHub</a>
+      <a href="https://www.linkedin.com/in/ben-murphy-/" target="_blank"
+        class="text-decoration-none text-muted">LinkedIn</a>
+    </p>
+  </div>
+</footer>
 
-  <footer>
-    <br>
-    <br>
-  </footer>
 </html>

@@ -203,7 +203,9 @@ def chart():
 
             xlt_col_names=xlt_col_names, 
             xlt_row_data=xlt_row_data,
-            zip=zip)
+            zip=zip,
+            
+            current_year=datetime.now().year)
     
     else:
         flash('Only head-to-head leagues are currently supported. Try again with a different League ID.')
