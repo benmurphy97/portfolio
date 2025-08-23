@@ -28,7 +28,7 @@
 <div class="container chart-border rounded p-3 mb-4">
     <h1 class="text-center">Average Points For vs Average Points Against</h1>
     <div class="container">
-        <canvas id="scatter_avg_points" width="20" height="10"></canvas>
+        <canvas id="scatter_avg_points"></canvas>
     </div>
 </div>
 <br>
@@ -139,7 +139,7 @@
                     display: true,
                     align: 'start',
                     color: '#214672',
-                    font: { size: 20 },
+                    font: { size: 16 },
                     formatter: function (value, ctx) {
                         return chart_labels[ctx.dataIndex];
                     }
