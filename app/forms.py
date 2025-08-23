@@ -6,5 +6,5 @@ class LeagueIDForm(FlaskForm):
     league_id = IntegerField('Enter League ID', 
                              validators=[InputRequired(), 
                                          NumberRange(min=1, 
-                                                     max=999999999)])
+                                                     max=999999)])
     submit = SubmitField('Generate Insights')
