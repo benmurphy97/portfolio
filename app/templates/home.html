@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="welcome-section text-center">
-    <h1>Welcome</h1>
+    <h1>Welcome!</h1>
     <p class="lead">Hi, I’m <strong>Ben Murphy</strong> — Data Scientist and Machine Learning Enthusiast.</p>
-    <p>I love turning data into insights and sharing my work through articles and projects.</p>
+    <p>Showcasing my work through articles and this very website.</p>
     <div class="welcome-buttons">
-        <a href="{{ url_for('articles') }}" class="btn btn-primary btn-lg">Read My Articles</a>
-        <a href="https://github.com/benmurphy97" target="_blank" class="btn btn-outline-secondary btn-lg">My GitHub</a>
+        <a href="{{ url_for('articles') }}" class="btn btn-custom">Read My Articles</a>
+        <a href="https://github.com/benmurphy97" target="_blank" class="btn btn-custom">My GitHub</a>
     </div>
 </div>
 {% endblock %}

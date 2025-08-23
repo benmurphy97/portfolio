@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="container border rounded p-3 mb-4">
+<div class="container chart-border rounded p-3 mb-4">
     <h1 class="text-center">{{ league_name }} Current Standings</h1>
     <table id="cltStandingsTable" class="table table-striped table-bordered table-hover align-middle text-center">
         <thead>
@@ -23,14 +23,14 @@
     </table>
 </div>
 <br>
-<div class="container border rounded p-3 mb-4">
+<div class="container chart-border rounded p-3 mb-4">
     <h1 class="text-center">Average Points For vs Average Points Against</h1>
     <div class="container">
         <canvas id="scatter_avg_points" width="20" height="10"></canvas>
     </div>
 </div>
 <br>
-<div class="container border rounded p-3 mb-4">
+<div class="container chart-border rounded p-3 mb-4">
     <h1 class="text-center">Expected Standings</h1>
     <table id="xltStandingsTable" class="table table-striped table-bordered table-hover align-middle text-center">
         <thead>
@@ -93,11 +93,11 @@
     const chart_labels = {{ labels | safe }};
 
     const data_flask = {
-        datasets: [{
-            data: {{ data_dict | tojson() }},
-    backgroundColor: 'rgb(255, 99, 132)',
-    }],
-};
+            datasets: [{
+                data: {{ data_dict | tojson() }},
+        backgroundColor: 'rgb(255, 99, 132)',
+        }],
+    };
 
     // Extract x and y values from your scatter dataset
     const xs = data_flask.datasets[0].data.map(pt => pt.x);
