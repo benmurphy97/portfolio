@@ -9,16 +9,22 @@ import feedparser
 from bs4 import BeautifulSoup  # for parsing HTML
 
 from datetime import datetime
+import time
 
 @app.route('/')
 @app.route('/home')
 def home():
     return render_template('home.html', title='Home')
 
-# route for pulling my articles directly from Medium
-@app.route("/articles")
-def articles():
 
+CACHE = {
+    "articles": [],
+    "last_fetch": 0
+}
+CACHE_DURATION = 300  # 5 minutes / 300 seconds
+
+
+def fetch_articles():
     # define medium username
     medium_username = "benmurphy_29746"
     feed_url = f"https://medium.com/feed/@{medium_username}"
@@ -46,7 +52,22 @@ def articles():
             "thumbnail": thumbnail
         })
 
-    return render_template("articles.html", articles=articles_data)
+    return articles_data
+
+
+# route for pulling my articles directly from Medium
+@app.route("/articles")
+def articles():
+
+    now = time.time()
+
+    # check how long has elapsed between queries
+    if now - CACHE['last_fetch'] > CACHE_DURATION:
+        CACHE['articles'] = fetch_articles()
+        CACHE['last_fetch'] = now
+    
+    return render_template("articles.html", articles=CACHE['articles'])
+
 
 @app.route('/inputLeagueID', methods=['GET', 'POST'])
 def inputLeagueID():
