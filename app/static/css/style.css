@@ -177,3 +177,6 @@ body {
     border: 1px solid #0540ff;                /* clean edges */
 
 }
+#scatter_avg_points {
+  background-color: white;
+}

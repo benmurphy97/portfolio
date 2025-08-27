@@ -102,23 +102,32 @@ def fetch_fpl_data(league_data):
         gw_data = json.loads(response.read())
         points_lookup_by_gw[gw] = {e["id"]: e["stats"]["total_points"] for e in gw_data["elements"]}
 
+    print(f"GW {gw} keys: {list(points_lookup_by_gw[gw].keys())[:20]}")  # first 20 IDs
+    print("Player 661 in points_lookup?", 661 in points_lookup_by_gw[gw])
+    print("Player 661 points:", points_lookup_by_gw[gw].get(661))
+
     # --- 5. Loop over all teams and GWs to collect picks and points ---
     records = []
-
+    
+    # https://draft.premierleague.com/api/entry/124780/event/1
     for entry_id in entry_ids:
         for gw in finished_gws:
             draft_url = f"https://draft.premierleague.com/api/entry/{entry_id}/event/{gw}"            
             response = urlopen(draft_url) 
             draft_data = json.loads(response.read())
 
-            for pick in draft_data["picks"]:
+            picks = draft_data["picks"]
+
+            for pick in picks:
                 player_id = pick["element"]
                 player = player_lookup[player_id]
-                
-                # official points from Classic FPL
+
+                # determine on pitch based on position
+                on_pitch = pick["position"] <= 11
+
+                # official FPL points (no multiplier/captain in Draft)
                 event_points = points_lookup_by_gw[gw][player_id]
-                total_points = event_points * pick["multiplier"]
-                
+
                 records.append({
                     "entry_id": entry_id,
                     "entry_name": entry_info[entry_id]["entry_name"],
@@ -127,42 +136,39 @@ def fetch_fpl_data(league_data):
                     "player_id": player_id,
                     "player_name": player["web_name"],
                     "position": pick["position"],
-                    "multiplier": pick["multiplier"],
                     "event_points": event_points,
-                    "total_points": total_points,
-                    "is_captain": pick["is_captain"],
-                    "is_vice_captain": pick["is_vice_captain"],
-                    "on_pitch": pick["position"] <= 11
+                    "on_pitch": on_pitch
                 })
+
 
     # --- 6. Create DataFrames ---
     df = pd.DataFrame(records)
-    print(df.iloc[0:30])
+    print(df.iloc[179:220])
 
-    # Summary: points on pitch vs bench per GW per team
-    summary = ( 
-        df.groupby(["entry_id", "entry_name", "manager", "gameweek", "on_pitch"])["total_points"]
+    # --- 7. Summary per GW: points on pitch vs bench ---
+    summary = (
+        df.groupby(["entry_id", "entry_name", "manager", "gameweek", "on_pitch"])["event_points"]
         .sum()
         .unstack(fill_value=0)
         .rename(columns={True: "points_on_pitch", False: "points_on_bench"})
         .reset_index()
     )
 
-    # --- 7. Add cumulative season points per team ---
+    # --- 8. Season cumulative totals per team ---
     season_totals = (
         summary.groupby(["entry_id", "entry_name", "manager"])[["points_on_pitch", "points_on_bench"]]
             .sum()
             .reset_index()
     )
-
-    # Add a total points column
     season_totals["total_points"] = season_totals["points_on_pitch"] + season_totals["points_on_bench"]
 
+
+    # --- 9. Display results ---
+    print("Per-GW summary (first 5 rows):")
+    print(summary.head(20))
+
+    print("\nSeason totals:")
     print(season_totals.sort_values("total_points", ascending=False))
-
-
-    print(summary)
-
 
 
 
