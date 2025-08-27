@@ -21,8 +21,8 @@ CACHE = {
     "articles": [],
     "last_fetch": 0
 }
-CACHE_DURATION = 300  # 5 minutes / 300 seconds
-
+# ARTICLE_CACHE_DURATION = 300  # 5 minutes / 300 seconds
+ARTICLE_CACHE_DURATION = 604800
 
 def fetch_articles():
     # define medium username
@@ -62,11 +62,108 @@ def articles():
     now = time.time()
 
     # check how long has elapsed between queries
-    if now - CACHE['last_fetch'] > CACHE_DURATION:
+    if now - CACHE['last_fetch'] > ARTICLE_CACHE_DURATION:
         CACHE['articles'] = fetch_articles()
         CACHE['last_fetch'] = now
     
     return render_template("articles.html", articles=CACHE['articles'])
+
+@app.route('/fetch_fpl_data', methods=['GET', 'POST'])
+def fetch_fpl_data(league_data):
+
+    # get entry ids in the league
+    entries = league_data["league_entries"]
+    entry_ids = [e["entry_id"] for e in entries]
+
+    # map entry_id → team name / manager name
+    entry_info = {e["entry_id"]: {
+        "entry_name": e["entry_name"],
+        "player_name": f"{e['player_first_name']} {e['player_last_name']}"
+    } for e in entries}
+
+    # --- 2. Get Draft player info ---
+    draft_bootstrap_url = "https://draft.premierleague.com/api/bootstrap-static"
+    response = urlopen(draft_bootstrap_url) 
+    draft_bootstrap = json.loads(response.read())
+    players = draft_bootstrap["elements"]
+    player_lookup = {p["id"]: p for p in players}
+
+    # --- 3. Get finished gameweeks from Classic FPL ---
+    fpl_bootstrap_url = "https://fantasy.premierleague.com/api/bootstrap-static/"
+    response = urlopen(fpl_bootstrap_url) 
+    fpl_bootstrap = json.loads(response.read())
+    finished_gws = [e["id"] for e in fpl_bootstrap["events"] if e["finished"]]
+
+    # --- 4. Pre-fetch Classic points for all finished GWs ---
+    points_lookup_by_gw = {}
+    for gw in finished_gws:
+        url = f"https://fantasy.premierleague.com/api/event/{gw}/live/"
+        response = urlopen(url) 
+        gw_data = json.loads(response.read())
+        points_lookup_by_gw[gw] = {e["id"]: e["stats"]["total_points"] for e in gw_data["elements"]}
+
+    # --- 5. Loop over all teams and GWs to collect picks and points ---
+    records = []
+
+    for entry_id in entry_ids:
+        for gw in finished_gws:
+            draft_url = f"https://draft.premierleague.com/api/entry/{entry_id}/event/{gw}"            
+            response = urlopen(draft_url) 
+            draft_data = json.loads(response.read())
+
+            for pick in draft_data["picks"]:
+                player_id = pick["element"]
+                player = player_lookup[player_id]
+                
+                # official points from Classic FPL
+                event_points = points_lookup_by_gw[gw][player_id]
+                total_points = event_points * pick["multiplier"]
+                
+                records.append({
+                    "entry_id": entry_id,
+                    "entry_name": entry_info[entry_id]["entry_name"],
+                    "manager": entry_info[entry_id]["player_name"],
+                    "gameweek": gw,
+                    "player_id": player_id,
+                    "player_name": player["web_name"],
+                    "position": pick["position"],
+                    "multiplier": pick["multiplier"],
+                    "event_points": event_points,
+                    "total_points": total_points,
+                    "is_captain": pick["is_captain"],
+                    "is_vice_captain": pick["is_vice_captain"],
+                    "on_pitch": pick["position"] <= 11
+                })
+
+    # --- 6. Create DataFrames ---
+    df = pd.DataFrame(records)
+    print(df.iloc[0:30])
+
+    # Summary: points on pitch vs bench per GW per team
+    summary = ( 
+        df.groupby(["entry_id", "entry_name", "manager", "gameweek", "on_pitch"])["total_points"]
+        .sum()
+        .unstack(fill_value=0)
+        .rename(columns={True: "points_on_pitch", False: "points_on_bench"})
+        .reset_index()
+    )
+
+    # --- 7. Add cumulative season points per team ---
+    season_totals = (
+        summary.groupby(["entry_id", "entry_name", "manager"])[["points_on_pitch", "points_on_bench"]]
+            .sum()
+            .reset_index()
+    )
+
+    # Add a total points column
+    season_totals["total_points"] = season_totals["points_on_pitch"] + season_totals["points_on_bench"]
+
+    print(season_totals.sort_values("total_points", ascending=False))
+
+
+    print(summary)
+
+
 
 
 @app.route('/inputLeagueID', methods=['GET', 'POST'])
@@ -103,6 +200,8 @@ def chart():
     league_name = data_json['league']['name']
     # if scoring is head-to-head format
     if data_json['league']['scoring'] == 'h':
+
+        fetch_fpl_data(data_json)
 
         # create id:name lookup
         ids = [i['id'] for i in data_json['league_entries']]
