@@ -68,7 +68,6 @@ def articles():
     
     return render_template("articles.html", articles=CACHE['articles'])
 
-@app.route('/fetch_fpl_data', methods=['GET', 'POST'])
 def fetch_fpl_data(league_data):
 
     # get entry ids in the league
@@ -126,12 +125,7 @@ def fetch_fpl_data(league_data):
             picks = draft_data["picks"] # list of elements by draft fpl id
 
             for pick in picks:
-                # print()
-                # print(pick)
-                # print(pick['element']) # element id
-                # print(draft_id_to_name[pick['element']])
-                # print(classic_name_to_id[draft_id_to_name[pick['element']]])
-
+                
                 # convert draft id to classic id
                 draft_id = pick['element']
                 classic_id = classic_name_to_id[draft_id_to_name[draft_id]]
@@ -176,14 +170,15 @@ def fetch_fpl_data(league_data):
     )
     season_totals["total_points"] = season_totals["points_on_pitch"] + season_totals["points_on_bench"]
 
-
-    # --- 9. Display results ---
-    print("Per-GW summary (first 5 rows):")
-    print(summary.head(20))
-
-    print("\nSeason totals:")
-    print(season_totals.sort_values("total_points", ascending=False))
-
+    season_totals.rename(columns={'entry_name': 'Team Name',
+                                  'manager': 'Manager',
+                                  'points_on_pitch': 'Points on Pitch',
+                                  'points_on_bench': 'Points on Bench',
+                                  'total_points': 'Total Points All Players'}, inplace=True)
+    
+    return season_totals[['Team Name', 'Manager', 
+                          'Points on Pitch', 'Points on Bench', 
+                          'Total Points All Players']]
 
 
 @app.route('/inputLeagueID', methods=['GET', 'POST'])
@@ -221,7 +216,10 @@ def chart():
     # if scoring is head-to-head format
     if data_json['league']['scoring'] == 'h':
 
-        fetch_fpl_data(data_json)
+        bench_points = fetch_fpl_data(data_json)
+
+        bench_row_data=list(bench_points.values.tolist())
+        bench_col_names = bench_points.columns.values
 
         # create id:name lookup
         ids = [i['id'] for i in data_json['league_entries']]
@@ -338,8 +336,11 @@ def chart():
             data_dict=data_dict,
             labels=player_initials,
 
-            clt_col_names = clt_col_names,
-            clt_row_data = clt_row_data,
+            bench_row_data=bench_row_data,
+            bench_col_names=bench_col_names,
+
+            clt_row_data=clt_row_data,
+            clt_col_names=clt_col_names,
 
             xlt_col_names=xlt_col_names, 
             xlt_row_data=xlt_row_data,
@@ -351,28 +352,3 @@ def chart():
         flash('Only head-to-head leagues are currently supported. Try again with a different League ID.')
         return redirect(url_for('inputLeagueID'))
 
-
-
-# @app.route('/rugby_matches')
-# def rugby_matches():
-
-
-#     # Fixtures with odds
-#     # TODO find out what date the matches were on - join on match time, home and away team
-#     odds = pd.read_csv("urc_latest_results_odds.csv")
-#     odds_row_data=list(odds.values.tolist())
-#     odds_col_names = odds.columns.values
-
-#     # get what the predictions were for the past matches
-
-#     return render_template('rugby_matches.html', 
-#                            title='Rugby Matches',
-#                             column_names=odds_col_names, 
-#                             row_data=odds_row_data,
-#                             zip=zip)
-
-
-# @app.route('/rugby_season_simulation')
-# def rugby_season_simulation():
-#     return render_template('rugby_season_simulation.html', 
-#                            title='Rugby Season Simulation')
