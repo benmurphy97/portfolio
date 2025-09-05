@@ -76,70 +76,84 @@ def fetch_fpl_data(league_data):
     entry_ids = [e["entry_id"] for e in entries]
 
     # map entry_id → team name / manager name
-    entry_info = {e["entry_id"]: {
-        "entry_name": e["entry_name"],
-        "player_name": f"{e['player_first_name']} {e['player_last_name']}"
-    } for e in entries}
+    entry_info = {e["entry_id"]: {"entry_name": e["entry_name"],
+                                  "player_name": f"{e['player_first_name']} {e['player_last_name']}"
+                                } for e in entries}
 
-    # --- 2. Get Draft player info ---
-    draft_bootstrap_url = "https://draft.premierleague.com/api/bootstrap-static"
-    response = urlopen(draft_bootstrap_url) 
-    draft_bootstrap = json.loads(response.read())
-    players = draft_bootstrap["elements"]
-    player_lookup = {p["id"]: p for p in players}
-
-    # --- 3. Get finished gameweeks from Classic FPL ---
+    # get finished gameweeks from classic fpl
     fpl_bootstrap_url = "https://fantasy.premierleague.com/api/bootstrap-static/"
     response = urlopen(fpl_bootstrap_url) 
     fpl_bootstrap = json.loads(response.read())
     finished_gws = [e["id"] for e in fpl_bootstrap["events"] if e["finished"]]
 
-    # --- 4. Pre-fetch Classic points for all finished GWs ---
+    # use classic fpl api to get points scored per finished week for every player
     points_lookup_by_gw = {}
     for gw in finished_gws:
         url = f"https://fantasy.premierleague.com/api/event/{gw}/live/"
         response = urlopen(url) 
         gw_data = json.loads(response.read())
+        # mapping of classic fpl api to points scored
         points_lookup_by_gw[gw] = {e["id"]: e["stats"]["total_points"] for e in gw_data["elements"]}
 
-    print(f"GW {gw} keys: {list(points_lookup_by_gw[gw].keys())[:20]}")  # first 20 IDs
-    print("Player 661 in points_lookup?", 661 in points_lookup_by_gw[gw])
-    print("Player 661 points:", points_lookup_by_gw[gw].get(661))
+    # create a draft api to classic api id lookup
+    # draft id to name
+    draft_bootstrap_url = "https://draft.premierleague.com/api/bootstrap-static"
+    response = urlopen(draft_bootstrap_url) 
+    draft_bootstrap = json.loads(response.read())
+    draft_id_to_name = {e['id']: f"{e['first_name']} {e['second_name']} {e['web_name']}" for e in draft_bootstrap['elements']}
+
+    # create a lookup for draft id to player info for later
+    players = draft_bootstrap["elements"]
+    player_lookup = {p["id"]: p for p in players}
+
+
+    # classic id to name
+    classic_bootstrap_url = "https://fantasy.premierleague.com/api/bootstrap-static/"
+    response = urlopen(classic_bootstrap_url)
+    classic_bootstrap = json.loads(response.read())
+    classic_name_to_id = {f"{e['first_name']} {e['second_name']} {e['web_name']}": e['id'] for e in classic_bootstrap['elements']}
+
 
     # --- 5. Loop over all teams and GWs to collect picks and points ---
     records = []
     
-    # https://draft.premierleague.com/api/entry/124780/event/1
     for entry_id in entry_ids:
         for gw in finished_gws:
-            draft_url = f"https://draft.premierleague.com/api/entry/{entry_id}/event/{gw}"            
+            # get picks for each team
+            draft_url = f"https://draft.premierleague.com/api/entry/{entry_id}/event/{gw}"       
             response = urlopen(draft_url) 
             draft_data = json.loads(response.read())
-
-            picks = draft_data["picks"]
+            picks = draft_data["picks"] # list of elements by draft fpl id
 
             for pick in picks:
-                player_id = pick["element"]
-                player = player_lookup[player_id]
+                # print()
+                # print(pick)
+                # print(pick['element']) # element id
+                # print(draft_id_to_name[pick['element']])
+                # print(classic_name_to_id[draft_id_to_name[pick['element']]])
+
+                # convert draft id to classic id
+                draft_id = pick['element']
+                classic_id = classic_name_to_id[draft_id_to_name[draft_id]]
+                event_points = points_lookup_by_gw[gw][classic_id]
+
+                player = player_lookup[draft_id]
 
                 # determine on pitch based on position
                 on_pitch = pick["position"] <= 11
 
-                # official FPL points (no multiplier/captain in Draft)
-                event_points = points_lookup_by_gw[gw][player_id]
-
                 records.append({
-                    "entry_id": entry_id,
-                    "entry_name": entry_info[entry_id]["entry_name"],
-                    "manager": entry_info[entry_id]["player_name"],
-                    "gameweek": gw,
-                    "player_id": player_id,
-                    "player_name": player["web_name"],
-                    "position": pick["position"],
-                    "event_points": event_points,
-                    "on_pitch": on_pitch
-                })
-
+                        "entry_id": entry_id,
+                        "entry_name": entry_info[entry_id]["entry_name"],
+                        "manager": entry_info[entry_id]["player_name"],
+                        "gameweek": gw,
+                        "classic_fpl_player_id": classic_id,
+                        "draft_fpl_player_id": draft_id,
+                        "player_name": player["web_name"],
+                        "position": pick["position"],
+                        "event_points": event_points,
+                        "on_pitch": on_pitch
+                    })
 
     # --- 6. Create DataFrames ---
     df = pd.DataFrame(records)
