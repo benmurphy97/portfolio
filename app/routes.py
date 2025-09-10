@@ -5,11 +5,10 @@ import json
 from urllib.request import urlopen 
 import pandas as pd
 
-import feedparser
-from bs4 import BeautifulSoup  # for parsing HTML
-
 from datetime import datetime
-import time
+
+from app.services.articles import fetch_articles
+from app.services.fpl import fetch_fpl_with_cache, get_bench_points_summary, build_fpl_charts
 
 @app.route('/')
 @app.route('/home')
@@ -17,178 +16,18 @@ def home():
     return render_template('home.html', title='Home')
 
 
-CACHE = {
-    "articles": [],
-    "last_fetch": 0
-}
-# ARTICLE_CACHE_DURATION = 300  # 5 minutes / 300 seconds
-ARTICLE_CACHE_DURATION = 604800
-
-def fetch_articles():
-    # define medium username
-    medium_username = "benmurphy_29746"
-    feed_url = f"https://medium.com/feed/@{medium_username}"
-
-    # Parse Medium RSS feed
-    feed = feedparser.parse(feed_url)
-
-    articles_data = []
-    for entry in feed.entries:
-
-        # Parse HTML in summary to find first image
-        soup = BeautifulSoup(entry.summary, "html.parser")
-        img_tag = soup.find("img")
-        thumbnail = img_tag["src"] if img_tag else None
-
-        # Format date to remove time
-        published_date = datetime.strptime(entry.published, "%a, %d %b %Y %H:%M:%S %Z")
-        formatted_date = published_date.strftime("%d %b %Y")  # e.g. "02 Aug 2024"
-
-        articles_data.append({
-            "title": entry.title,
-            "link": entry.link,
-            "description": soup.get_text(),  # plain text from summary
-            "published": formatted_date,
-            "thumbnail": thumbnail
-        })
-
-    return articles_data
-
-
 # route for pulling my articles directly from Medium
 @app.route("/articles")
 def articles():
-
-    now = time.time()
-
-    # check how long has elapsed between queries
-    if now - CACHE['last_fetch'] > ARTICLE_CACHE_DURATION:
-        CACHE['articles'] = fetch_articles()
-        CACHE['last_fetch'] = now
-    
-    return render_template("articles.html", articles=CACHE['articles'])
-
-def fetch_fpl_data(league_data):
-
-    # get entry ids in the league
-    entries = league_data["league_entries"]
-    entry_ids = [e["entry_id"] for e in entries]
-
-    # map entry_id → team name / manager name
-    entry_info = {e["entry_id"]: {"entry_name": e["entry_name"],
-                                  "player_name": f"{e['player_first_name']} {e['player_last_name']}"
-                                } for e in entries}
-
-    # get finished gameweeks from classic fpl
-    fpl_bootstrap_url = "https://fantasy.premierleague.com/api/bootstrap-static/"
-    response = urlopen(fpl_bootstrap_url) 
-    fpl_bootstrap = json.loads(response.read())
-    finished_gws = [e["id"] for e in fpl_bootstrap["events"] if e["finished"]]
-
-    # use classic fpl api to get points scored per finished week for every player
-    points_lookup_by_gw = {}
-    for gw in finished_gws:
-        url = f"https://fantasy.premierleague.com/api/event/{gw}/live/"
-        response = urlopen(url) 
-        gw_data = json.loads(response.read())
-        # mapping of classic fpl api to points scored
-        points_lookup_by_gw[gw] = {e["id"]: e["stats"]["total_points"] for e in gw_data["elements"]}
-
-    # create a draft api to classic api id lookup
-    # draft id to name
-    draft_bootstrap_url = "https://draft.premierleague.com/api/bootstrap-static"
-    response = urlopen(draft_bootstrap_url) 
-    draft_bootstrap = json.loads(response.read())
-    draft_id_to_name = {e['id']: f"{e['first_name']} {e['second_name']} {e['web_name']}" for e in draft_bootstrap['elements']}
-
-    # create a lookup for draft id to player info for later
-    players = draft_bootstrap["elements"]
-    player_lookup = {p["id"]: p for p in players}
-
-
-    # classic id to name
-    classic_bootstrap_url = "https://fantasy.premierleague.com/api/bootstrap-static/"
-    response = urlopen(classic_bootstrap_url)
-    classic_bootstrap = json.loads(response.read())
-    classic_name_to_id = {f"{e['first_name']} {e['second_name']} {e['web_name']}": e['id'] for e in classic_bootstrap['elements']}
-
-
-    # --- 5. Loop over all teams and GWs to collect picks and points ---
-    records = []
-    
-    for entry_id in entry_ids:
-        for gw in finished_gws:
-            # get picks for each team
-            draft_url = f"https://draft.premierleague.com/api/entry/{entry_id}/event/{gw}"       
-            response = urlopen(draft_url) 
-            draft_data = json.loads(response.read())
-            picks = draft_data["picks"] # list of elements by draft fpl id
-
-            for pick in picks:
-                
-                # convert draft id to classic id
-                draft_id = pick['element']
-                classic_id = classic_name_to_id[draft_id_to_name[draft_id]]
-                event_points = points_lookup_by_gw[gw][classic_id]
-
-                player = player_lookup[draft_id]
-
-                # determine on pitch based on position
-                on_pitch = pick["position"] <= 11
-
-                records.append({
-                        "entry_id": entry_id,
-                        "entry_name": entry_info[entry_id]["entry_name"],
-                        "manager": entry_info[entry_id]["player_name"],
-                        "gameweek": gw,
-                        "classic_fpl_player_id": classic_id,
-                        "draft_fpl_player_id": draft_id,
-                        "player_name": player["web_name"],
-                        "position": pick["position"],
-                        "event_points": event_points,
-                        "on_pitch": on_pitch
-                    })
-
-    # --- 6. Create DataFrames ---
-    df = pd.DataFrame(records)
-    print(df.iloc[179:220])
-
-    # --- 7. Summary per GW: points on pitch vs bench ---
-    summary = (
-        df.groupby(["entry_id", "entry_name", "manager", "gameweek", "on_pitch"])["event_points"]
-        .sum()
-        .unstack(fill_value=0)
-        .rename(columns={True: "points_on_pitch", False: "points_on_bench"})
-        .reset_index()
-    )
-
-    # --- 8. Season cumulative totals per team ---
-    season_totals = (
-        summary.groupby(["entry_id", "entry_name", "manager"])[["points_on_pitch", "points_on_bench"]]
-            .sum()
-            .reset_index()
-    )
-    season_totals["total_points"] = season_totals["points_on_pitch"] + season_totals["points_on_bench"]
-
-    season_totals.rename(columns={'entry_name': 'Team Name',
-                                  'manager': 'Manager',
-                                  'points_on_pitch': 'Points on Pitch',
-                                  'points_on_bench': 'Points on Bench',
-                                  'total_points': 'Total Points All Players'}, inplace=True)
-    
-    return season_totals[['Team Name', 'Manager', 
-                          'Points on Pitch', 'Points on Bench', 
-                          'Total Points All Players']]
+    articles = fetch_articles()
+    return render_template("articles.html", articles=articles)
 
 
 @app.route('/inputLeagueID', methods=['GET', 'POST'])
 def inputLeagueID():
-
     form = LeagueIDForm()
-
     if form.validate_on_submit():
         return redirect(url_for('chart'))
-    
     return render_template('inputLeagueID.html', title='League ID Input', form=form)
 
 
@@ -197,26 +36,56 @@ def chart():
     
     league_id = request.form.get('league_id')
 
+    if not league_id:
+        flash("Please enter a league id.")
+        return redirect(url_for('inputLeagueID'))
+    
+    url = f"https://draft.premierleague.com/api/league/{league_id}/details"
+    league_details = fetch_fpl_with_cache(url=url, cache_key=f"league_{league_id}_details")
+
+    # cupport for head to head leagues only.
+    if league_details['league']['scoring'] == 'h':
+
+        charts = build_fpl_charts(league_id)
+
+    return render_template(
+            template_name_or_list='chart.html',
+            league_id=league_id,
+            league_name=league_name,
+            data_dict=data_dict,
+            labels=player_initials,
+
+            bench_row_data=bench_row_data,
+            bench_col_names=bench_col_names,
+
+            clt_row_data=clt_row_data,
+            clt_col_names=clt_col_names,
+
+            xlt_col_names=xlt_col_names, 
+            xlt_row_data=xlt_row_data,
+            zip=zip,
+            
+            current_year=datetime.now().year)
+
     # the league id enterred may be valid input but the number doesnt correspond to a League ID
-    # IDs are created iteratively - most recently created league will have the largest ID number but we dont know what the largest one is
+    # IDs are created iteratively - most recently created league will have the largest ID number 
+    # but we dont know what the largest one is
     # define url for fpl api
     url = f"https://draft.premierleague.com/api/league/{league_id}/details"
 
     try:
-        # store the response of URL 
-        response = urlopen(url) 
+        league_details = fetch_fpl_with_cache(url=url, cache_key=f"league_{league_id}_details")
     except:
         flash('The League ID enterred could not be loaded. Try again with a different League ID.')
         return redirect(url_for('inputLeagueID'))
     
-    # storing the JSON response  
-    data_json = json.loads(response.read())
+    data_json = league_details
 
     league_name = data_json['league']['name']
     # if scoring is head-to-head format
     if data_json['league']['scoring'] == 'h':
 
-        bench_points = fetch_fpl_data(data_json)
+        bench_points = get_bench_points_summary(data_json)
 
         bench_row_data=list(bench_points.values.tolist())
         bench_col_names = bench_points.columns.values
