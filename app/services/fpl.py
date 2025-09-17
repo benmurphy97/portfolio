@@ -3,6 +3,8 @@ import json
 import pandas as pd
 import os
 import time
+import numpy as np
+from collections import defaultdict
 
 CACHE_DIR = "cache"
 CACHE_TTL = 60 * 60 * 24 * 7 # 60 secs * 60 minutes
@@ -28,8 +30,11 @@ def fetch_fpl_with_cache(url, cache_key):
             with open(cache_file, "r") as f:
                 return json.load(f)
 
+    # TODO fall back on cached data if exists if requests fails
+
     # if data is not in cache, load the data into cache and return it
     print(f"cache file {cache_file} doesn't exist - inserting into cache")
+    # TODO Consider using requests
     response =  urlopen(url)
     data = json.loads(response.read())
 
@@ -251,7 +256,7 @@ def get_expected_standings(league_id):
     matches_df['prob_winning_week'] = matches_df['number_of_opponents_beaten_in_week'].apply(lambda x: x/9)
     matches_df['prob_losing_week'] = 1 - matches_df['prob_winning_week']
 
-    matches_df['expected_points_win'] = matches_df['prob_winning_week']*3
+    matches_df['expected_points_win'] = matches_df['prob_winning_week'] * 3
     matches_df['expected_points_draw'] = matches_df['number_of_opponents_drawn_to_in_week'].apply(lambda x: (x/9) * 1 )
 
     matches_df['expected_points'] = matches_df['expected_points_win'] + matches_df['expected_points_draw']
@@ -278,14 +283,77 @@ def get_expected_standings(league_id):
 
     standings = standings[['Player', 'Expected Position', 'Expected Points', 'Actual Points', 'Actual Position', 'Over/Under Performance']]
 
-    xlt_row_data=list(round(standings,3).values.tolist())
-    xlt_col_names = standings.columns.values
+    return standings
 
-    return xlt_row_data, xlt_col_names
+
+#  use monte carlo simulation to preict final league table standings for a league
+def get_predicted_standings(league_id, num_simulations=1000):
+
+    league_details_url = f"https://draft.premierleague.com/api/league/{league_id}/details"
+    league_details = fetch_fpl_with_cache(url=league_details_url, cache_key=f"draft_league_{league_id}_details")
+
+    standings = pd.DataFrame(league_details['standings'])
+    matches = pd.DataFrame(league_details['matches'])
+
+    # --- Identify remaining fixtures ---
+    upcoming = matches[~matches['finished']]
+
+    # --- Compute average points scored per game so far ---
+    standings['games_played'] = (
+        standings[['matches_won', 'matches_lost', 'matches_drawn']].sum(axis=1)
+    )
+    standings['avg_points_for'] = standings['points_for'] / standings['games_played']
+
+    team_strength = standings.set_index('league_entry')['avg_points_for'].to_dict()
+
+    # --- Simulation storage ---
+    rank_counts = defaultdict(lambda: np.zeros(len(standings), dtype=int))
+
+    # --- Run simulations ---
+    for _ in range(num_simulations):
+        # Start from current points
+        sim_table = standings[['league_entry', 'total']].copy()
+        sim_table = sim_table.set_index('league_entry')
+
+        # Simulate each remaining fixture
+        for _, match in upcoming.iterrows():
+            t1, t2 = match['league_entry_1'], match['league_entry_2']
+            mu1, mu2 = team_strength[t1], team_strength[t2]
+
+            score1 = np.random.poisson(mu1)
+            score2 = np.random.poisson(mu2)
+
+            if score1 > score2:
+                sim_table.loc[t1, 'total'] += 3
+            elif score2 > score1:
+                sim_table.loc[t2, 'total'] += 3
+            else:
+                sim_table.loc[t1, 'total'] += 1
+                sim_table.loc[t2, 'total'] += 1
+
+        # Assign ranks
+        sim_table['rank'] = sim_table['total'].rank(method="min", ascending=False).astype(int)
+
+        for team_id, row in sim_table.iterrows():
+            final_rank = row['rank'] - 1  # zero-based index
+            rank_counts[team_id][final_rank] += 1
+
+    # --- Convert to probability DataFrame ---
+    results = []
+    id_name_map = {e['id']: e['short_name'] for e in league_details['league_entries']}
+    for team_id, counts in rank_counts.items():
+        probs = counts / num_simulations
+        results.append([id_name_map[team_id]] + probs.tolist())
+
+    num_teams = len(standings)
+    columns = ['Team'] + ["Prob 1st", "Prob 2nd", "Prob 3rd"] + [f"Prob {i+1+3}th" for i in range(num_teams-3)]
+    probs_df = pd.DataFrame(results, columns=columns)
+
+    return probs_df.sort_values(by=["Prob 1st", "Prob 2nd", columns[-1]], ascending=[False, False, True]).reset_index(drop=True)
 
 
 # central function to create all charts for chart.html
-def build_fpl_charts(league_id):
+def get_fpl_charts(league_id):
 
     # bench points 
     bench_points_table = get_bench_points_summary(league_id)
@@ -298,10 +366,16 @@ def build_fpl_charts(league_id):
             player_initials = get_current_standings(league_id)
     
     # expected standings
-    xpected_standings_row_data, expected_standings_col_names = get_expected_standings(league_id)
+    expected_standings = get_expected_standings(league_id)
+    expected_standings_row_data = list(round(expected_standings,3).values.tolist())
+    expected_standings_col_names = expected_standings.columns.values
+
+    predicted_standings = get_predicted_standings(league_id)
+    print(predicted_standings)
 
     return bench_row_data, bench_col_names, \
             current_standings_row_data, current_standings_col_names, \
             scatter_pts_for_vs_agnst_data_dict, \
             player_initials, \
-            xpected_standings_row_data, expected_standings_col_names
+            expected_standings_row_data, expected_standings_col_names
+
