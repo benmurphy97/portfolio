@@ -5,7 +5,7 @@ import os
 import time
 
 CACHE_DIR = "cache"
-CACHE_TTL = 60 * 60 # 60 secs * 60 minutes
+CACHE_TTL = 60 * 60 * 24 * 7 # 60 secs * 60 minutes
 
 
 # get data from api, use cache if data exists already
@@ -20,6 +20,7 @@ def fetch_fpl_with_cache(url, cache_key):
 
     # use cache data if exists
     if os.path.exists(cache_file):
+        print(f"cache file {cache_file} exists - using cache")
         mtime = os.path.getmtime(cache_file)
         # if the file has been modified recently, load the data from it
         if time.time() - mtime < CACHE_TTL:
@@ -28,6 +29,7 @@ def fetch_fpl_with_cache(url, cache_key):
                 return json.load(f)
 
     # if data is not in cache, load the data into cache and return it
+    print(f"cache file {cache_file} doesn't exist - inserting into cache")
     response =  urlopen(url)
     data = json.loads(response.read())
 
@@ -41,6 +43,7 @@ def fetch_fpl_with_cache(url, cache_key):
 
 def get_bench_points_summary(league_id):
 
+    print("Getting bench points")
     # api calls
 
     league_details_url = f"https://draft.premierleague.com/api/league/{league_id}/details"
@@ -200,8 +203,85 @@ def get_current_standings(league_id):
             scatter_pts_for_vs_agnst_data_dict, \
             player_initials
 
-    
 
+
+def get_expected_standings(league_id):
+    league_details_url = f"https://draft.premierleague.com/api/league/{league_id}/details"
+    league_details = fetch_fpl_with_cache(url=league_details_url, cache_key=f"draft_league_{league_id}_details")
+
+    data_json = league_details
+
+    ids = [i['id'] for i in league_details['league_entries']]
+    names = [i['short_name'] for i in league_details['league_entries']]
+    id_name_map = {i:v for i,v in zip(ids,names)}
+
+    # expected league table
+    matches = pd.DataFrame(data_json['matches'])
+
+    matches1 = matches.loc[matches['finished']==True]
+    matches1.drop(columns=['finished', 'started', 'winning_league_entry', 'winning_method'], inplace=True)
+    matches1.rename(columns={'event': 'week',
+                            'league_entry_1': 'player',
+                            'league_entry_1_points': 'points_for',
+                            'league_entry_2': 'opponent',
+                            'league_entry_2_points': 'points_against'},
+                inplace=True)
+
+
+    matches2 = matches.loc[matches['finished']==True]
+    matches2.drop(columns=['finished', 'started', 'winning_league_entry', 'winning_method'], inplace=True)
+    matches2.rename(columns={'event': 'week',
+                            'league_entry_1': 'opponent',
+                            'league_entry_1_points': 'points_against',
+                            'league_entry_2': 'player',
+                            'league_entry_2_points': 'points_for'},
+                inplace=True)
+
+    matches_df = pd.concat([matches1, matches2]).sort_values(by=['week', 'points_for'], ascending=[True, False]).reset_index(drop=True)
+
+    # get the rank of each player's score in the gameweek
+    matches_df['points_for_week_rank'] = matches_df.groupby('week')['points_for'].rank(ascending=False, method='max')
+    matches_df['points_against_week_rank'] = matches_df.groupby('week')['points_against'].rank(ascending=False, method='min')
+
+    matches_df['player'] = matches_df['player'].apply(lambda x: id_name_map[x].strip())
+
+    matches_df['number_of_opponents_beaten_in_week'] = 10-matches_df['points_for_week_rank']
+    matches_df['number_of_opponents_drawn_to_in_week'] = matches_df[['week', 'points_for']].duplicated(keep=False).astype(int).values
+
+    matches_df['prob_winning_week'] = matches_df['number_of_opponents_beaten_in_week'].apply(lambda x: x/9)
+    matches_df['prob_losing_week'] = 1 - matches_df['prob_winning_week']
+
+    matches_df['expected_points_win'] = matches_df['prob_winning_week']*3
+    matches_df['expected_points_draw'] = matches_df['number_of_opponents_drawn_to_in_week'].apply(lambda x: (x/9) * 1 )
+
+    matches_df['expected_points'] = matches_df['expected_points_win'] + matches_df['expected_points_draw']
+
+    s_df = pd.DataFrame(data_json['standings'])
+    s_df['player'] = s_df['league_entry'].apply(lambda x: id_name_map[x])
+
+    # aggregate epected points by player
+    expected_standing = matches_df.groupby('player')['expected_points'].sum().round(2).reset_index()
+
+    # get real standings
+    standings = s_df[['player', 'rank', 'total']].sort_values('player').reset_index(drop=True)
+    standings['player'] = standings['player'].str.strip() # format player name
+
+    standings['expected_points'] = expected_standing['expected_points']
+    standings['over/under performance'] = standings['total']-standings['expected_points']
+    standings.rename({'total': 'actual_points'}, inplace=True)
+    standings.columns = ['Player', 'Actual Position', 'Actual Points', 'Expected Points', 'Over/Under Performance']
+
+    standings = standings.sort_values(by='Expected Points', ascending=False)
+
+    # asign expected rank position
+    standings['Expected Position'] = standings['Expected Points'].rank(ascending=False).astype(int)
+
+    standings = standings[['Player', 'Expected Position', 'Expected Points', 'Actual Points', 'Actual Position', 'Over/Under Performance']]
+
+    xlt_row_data=list(round(standings,3).values.tolist())
+    xlt_col_names = standings.columns.values
+
+    return xlt_row_data, xlt_col_names
 
 
 # central function to create all charts for chart.html
@@ -213,9 +293,15 @@ def build_fpl_charts(league_id):
     bench_col_names = bench_points_table.columns.values
     
     # current standings
-    current_standings_row_data, current_standings_col_names, scatter_pts_for_vs_agnst_data_dict, player_initials = get_current_standings(league_id)
+    current_standings_row_data, current_standings_col_names, \
+        scatter_pts_for_vs_agnst_data_dict,\
+            player_initials = get_current_standings(league_id)
     
     # expected standings
+    xpected_standings_row_data, expected_standings_col_names = get_expected_standings(league_id)
 
-
-    return bench_points_table, current_standings_table
+    return bench_row_data, bench_col_names, \
+            current_standings_row_data, current_standings_col_names, \
+            scatter_pts_for_vs_agnst_data_dict, \
+            player_initials, \
+            xpected_standings_row_data, expected_standings_col_names
