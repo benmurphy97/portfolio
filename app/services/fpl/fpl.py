@@ -1,50 +1,7 @@
-from urllib.request import urlopen 
-import json
 import pandas as pd
-import os
-import time
 import numpy as np
 from collections import defaultdict
-
-CACHE_DIR = "cache"
-CACHE_TTL = 60 * 60 * 24 * 7 # 60 secs * 60 minutes
-
-
-# get data from api, use cache if data exists already
-def fetch_fpl_with_cache(url, cache_key):
-
-    # if cache folder does not exist
-    if not os.path.exists(CACHE_DIR):
-        os.makedirs(CACHE_DIR)
-
-    # construct cache file path
-    cache_file = os.path.join(CACHE_DIR, f"{cache_key}.json")
-
-    # use cache data if exists
-    if os.path.exists(cache_file):
-        print(f"cache file {cache_file} exists - using cache")
-        mtime = os.path.getmtime(cache_file)
-        # if the file has been modified recently, load the data from it
-        if time.time() - mtime < CACHE_TTL:
-            # read from cache
-            with open(cache_file, "r") as f:
-                return json.load(f)
-
-    # TODO fall back on cached data if exists if requests fails
-
-    # if data is not in cache, load the data into cache and return it
-    print(f"cache file {cache_file} doesn't exist - inserting into cache")
-    # TODO Consider using requests
-    response =  urlopen(url)
-    data = json.loads(response.read())
-
-    # write to cache
-    with open(cache_file, "w") as f:
-        json.dump(data, f)
-
-    return data
-
-
+from app.services.fpl.cache import fetch_fpl_with_cache
 
 def get_bench_points_summary(league_id):
 
@@ -354,6 +311,15 @@ def get_predicted_standings(league_id, num_simulations=1000):
 
 # central function to create all charts for chart.html
 def get_fpl_charts(league_id):
+
+
+
+
+
+
+
+
+
 
     # bench points 
     bench_points_table = get_bench_points_summary(league_id)
