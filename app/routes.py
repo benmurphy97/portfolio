@@ -46,7 +46,7 @@ def chart():
 
     if not os.path.exists(league_cache_file):
         # this is a new league_id
-        enqueue_league_cache_update(league_id)
+        h2h_ind = enqueue_league_cache_update(league_id)
 
         # Wait briefly (max 5s) for cache updater thread to finish
         timeout = 5
@@ -57,7 +57,8 @@ def chart():
     
     # --- If still no cache, it's invalid ---
     if not os.path.exists(league_cache_file):
-        flash("The League ID entered could not be loaded. Try again with a different League ID.")
+        non_h2h = "Your league is not head to head scoring" if not h2h_ind else ""
+        flash(f"The League ID entered could not be loaded. Try again with a different League ID. {non_h2h}")
         return redirect(url_for('inputLeagueID'))
 
     # --- Load from cache (safe now) ---

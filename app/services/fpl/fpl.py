@@ -56,37 +56,38 @@ def get_bench_points_summary(league_id):
     records = []
     
     for entry_id in entry_ids:
-        for gw in finished_gws:
-            # get picks for each team
-            entry_gw_url = f"https://draft.premierleague.com/api/entry/{entry_id}/event/{gw}"
-            entry_gw_data = fetch_fpl_with_cache(url=entry_gw_url, cache_key=f"draft_entry_{entry_id}_gw_{gw}")
+        if entry_id is not None:
+            for gw in finished_gws:
+                # get picks for each team
+                entry_gw_url = f"https://draft.premierleague.com/api/entry/{entry_id}/event/{gw}"
+                entry_gw_data = fetch_fpl_with_cache(url=entry_gw_url, cache_key=f"draft_entry_{entry_id}_gw_{gw}")
 
-            picks = entry_gw_data["picks"] # list of elements by draft fpl id
+                picks = entry_gw_data["picks"] # list of elements by draft fpl id
 
-            for pick in picks:
-                
-                # convert draft id to classic id
-                draft_id = pick['element']
-                classic_id = classic_name_to_id[draft_id_to_name[draft_id]]
-                event_points = points_lookup_by_gw[gw][classic_id]
+                for pick in picks:
+                    
+                    # convert draft id to classic id
+                    draft_id = pick['element']
+                    classic_id = classic_name_to_id[draft_id_to_name[draft_id]]
+                    event_points = points_lookup_by_gw[gw][classic_id]
 
-                player = player_lookup[draft_id]
+                    player = player_lookup[draft_id]
 
-                # determine on pitch based on position
-                on_pitch = pick["position"] <= 11
+                    # determine on pitch based on position
+                    on_pitch = pick["position"] <= 11
 
-                records.append({
-                        "entry_id": entry_id,
-                        "entry_name": entry_info[entry_id]["entry_name"],
-                        "manager": entry_info[entry_id]["player_name"],
-                        "gameweek": gw,
-                        "classic_fpl_player_id": classic_id,
-                        "draft_fpl_player_id": draft_id,
-                        "player_name": player["web_name"],
-                        "position": pick["position"],
-                        "event_points": event_points,
-                        "on_pitch": on_pitch
-                    })
+                    records.append({
+                            "entry_id": entry_id,
+                            "entry_name": entry_info[entry_id]["entry_name"],
+                            "manager": entry_info[entry_id]["player_name"],
+                            "gameweek": gw,
+                            "classic_fpl_player_id": classic_id,
+                            "draft_fpl_player_id": draft_id,
+                            "player_name": player["web_name"],
+                            "position": pick["position"],
+                            "event_points": event_points,
+                            "on_pitch": on_pitch
+                        })
 
     # --- 6. Create DataFrames ---
     df = pd.DataFrame(records)
@@ -177,6 +178,8 @@ def get_expected_standings(league_id):
     names = [i['short_name'] for i in league_details['league_entries']]
     id_name_map = {i:v for i,v in zip(ids,names)}
 
+    n_players = len(league_details['league_entries'])
+
     # expected league table
     matches = pd.DataFrame(data_json['matches'])
 
@@ -200,6 +203,7 @@ def get_expected_standings(league_id):
                 inplace=True)
 
     matches_df = pd.concat([matches1, matches2]).sort_values(by=['week', 'points_for'], ascending=[True, False]).reset_index(drop=True)
+    print(matches_df)
 
     # get the rank of each player's score in the gameweek
     matches_df['points_for_week_rank'] = matches_df.groupby('week')['points_for'].rank(ascending=False, method='max')
@@ -207,19 +211,21 @@ def get_expected_standings(league_id):
 
     matches_df['player'] = matches_df['player'].apply(lambda x: id_name_map[x].strip())
 
-    matches_df['number_of_opponents_beaten_in_week'] = 10-matches_df['points_for_week_rank']
+    matches_df['number_of_opponents_beaten_in_week'] = n_players-matches_df['points_for_week_rank']
     matches_df['number_of_opponents_drawn_to_in_week'] = matches_df[['week', 'points_for']].duplicated(keep=False).astype(int).values
 
-    matches_df['prob_winning_week'] = matches_df['number_of_opponents_beaten_in_week'].apply(lambda x: x/9)
+    matches_df['prob_winning_week'] = matches_df['number_of_opponents_beaten_in_week'].apply(lambda x: x/(n_players-1))
     matches_df['prob_losing_week'] = 1 - matches_df['prob_winning_week']
 
     matches_df['expected_points_win'] = matches_df['prob_winning_week'] * 3
-    matches_df['expected_points_draw'] = matches_df['number_of_opponents_drawn_to_in_week'].apply(lambda x: (x/9) * 1 )
+    matches_df['expected_points_draw'] = matches_df['number_of_opponents_drawn_to_in_week'].apply(lambda x: (x/(n_players-1)) * 1 )
 
     matches_df['expected_points'] = matches_df['expected_points_win'] + matches_df['expected_points_draw']
 
     s_df = pd.DataFrame(data_json['standings'])
     s_df['player'] = s_df['league_entry'].apply(lambda x: id_name_map[x])
+
+    print(matches_df)
 
     # aggregate epected points by player
     expected_standing = matches_df.groupby('player')['expected_points'].sum().round(2).reset_index()
@@ -244,7 +250,7 @@ def get_expected_standings(league_id):
 
 
 #  use monte carlo simulation to preict final league table standings for a league
-def get_predicted_standings(league_id, num_simulations=1000):
+def get_predicted_standings(league_id, num_simulations=50):
 
     league_details_url = f"https://draft.premierleague.com/api/league/{league_id}/details"
     league_details = fetch_fpl_with_cache(url=league_details_url, cache_key=f"draft_league_{league_id}_details")
@@ -303,23 +309,14 @@ def get_predicted_standings(league_id, num_simulations=1000):
         results.append([id_name_map[team_id]] + probs.tolist())
 
     num_teams = len(standings)
-    columns = ['Team'] + ["Prob 1st", "Prob 2nd", "Prob 3rd"] + [f"Prob {i+1+3}th" for i in range(num_teams-3)]
+    columns = ['Team'] + ["1st", "2nd", "3rd"] + [f"{i+1+3}th" for i in range(num_teams-3)]
     probs_df = pd.DataFrame(results, columns=columns)
 
-    return probs_df.sort_values(by=["Prob 1st", "Prob 2nd", columns[-1]], ascending=[False, False, True]).reset_index(drop=True)
+    return probs_df.sort_values(by=["1st", "2nd", columns[-1]], ascending=[False, False, True]).reset_index(drop=True)
 
 
 # central function to create all charts for chart.html
 def get_fpl_charts(league_id):
-
-
-
-
-
-
-
-
-
 
     # bench points 
     bench_points_table = get_bench_points_summary(league_id)
