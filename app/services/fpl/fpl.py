@@ -23,7 +23,7 @@ def get_bench_points_summary(league_id):
 
     # use classic fpl api to get points scored per finished week for every player
     finished_gws = [e["id"] for e in classic_bootstrap["events"] if e["finished"]]
-
+    print(f"DEBUG {finished_gws}")
     points_lookup_by_gw = {}
     for gw in finished_gws:
         gw_url = f"https://fantasy.premierleague.com/api/event/{gw}/live/"
@@ -203,7 +203,6 @@ def get_expected_standings(league_id):
                 inplace=True)
 
     matches_df = pd.concat([matches1, matches2]).sort_values(by=['week', 'points_for'], ascending=[True, False]).reset_index(drop=True)
-    print(matches_df)
 
     # get the rank of each player's score in the gameweek
     matches_df['points_for_week_rank'] = matches_df.groupby('week')['points_for'].rank(ascending=False, method='max')
@@ -224,8 +223,6 @@ def get_expected_standings(league_id):
 
     s_df = pd.DataFrame(data_json['standings'])
     s_df['player'] = s_df['league_entry'].apply(lambda x: id_name_map[x])
-
-    print(matches_df)
 
     # aggregate epected points by player
     expected_standing = matches_df.groupby('player')['expected_points'].sum().round(2).reset_index()
@@ -335,7 +332,7 @@ def get_fpl_charts(league_id):
 
     predicted_standings = get_predicted_standings(league_id)
     print(predicted_standings)
-
+    
     return bench_row_data, bench_col_names, \
             current_standings_row_data, current_standings_col_names, \
             scatter_pts_for_vs_agnst_data_dict, \

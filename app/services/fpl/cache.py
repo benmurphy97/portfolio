@@ -7,16 +7,14 @@ from urllib.request import urlopen
 import requests
 
 CACHE_DIR = "cache"
-LATEST_GW_FILE = os.path.join(CACHE_DIR, "latest_finished_gw.json")
 GLOBAL_GW_FILE = os.path.join(CACHE_DIR, "latest_finished_gw_global.json")
-CACHE_TTL = 60 * 60 * 24 * 7 # 60 secs * 60 minutes
 
 def ensure_cache_dir():
     if not os.path.exists(CACHE_DIR):
         os.makedirs(CACHE_DIR)
 
 
-# get the number of the latest finished gameweek
+# get the number of the latest finished gameweek from api
 def fetch_latest_finished_gw():
     url = "https://fantasy.premierleague.com/api/bootstrap-static/"
     data = requests.get(url).json()
@@ -31,6 +29,7 @@ def get_cached_latest_gw(league_id):
             return json.load(f).get("latest_finished_gw")
     return None
 
+
 def set_cached_latest_gw(league_id, gw):
     """Write the last cached GW number for this league."""
     gw_file = os.path.join(CACHE_DIR, f"latest_finished_gw_{league_id}.json")
@@ -39,16 +38,17 @@ def set_cached_latest_gw(league_id, gw):
 
 
 # get data from api, use cache if data exists already
-def fetch_fpl_with_cache(url, cache_key):
+def fetch_fpl_with_cache(url, cache_key, update_bootstrap=False):
     if not os.path.exists(CACHE_DIR):
         os.makedirs(CACHE_DIR)
 
     cache_file = os.path.join(CACHE_DIR, f"{cache_key}.json")
 
-    # Use cache if exists
-    if os.path.exists(cache_file):
-        with open(cache_file, "r") as f:
-            return json.load(f)
+    if not update_bootstrap:
+        # Use cache if exists
+        if os.path.exists(cache_file):
+            with open(cache_file, "r") as f:
+                return json.load(f)
 
     # Otherwise, fetch from API and write to cache
     print(f"Fetching {url} → cache key {cache_key}")
@@ -78,14 +78,19 @@ def update_global_cache():
     current_latest_gw = fetch_latest_finished_gw()
     cached_latest_gw = get_cached_latest_global_gw()
 
+    print(f"Current latest {current_latest_gw}")
+    print(f"Cached latest {cached_latest_gw}")
+
     if cached_latest_gw == current_latest_gw:
         return
 
     print(f"🌍 Updating global cache for latest GW {current_latest_gw}...")
 
     # Bootstrap data
-    fetch_fpl_with_cache("https://fantasy.premierleague.com/api/bootstrap-static/", "classic_bootstrap")
-    fetch_fpl_with_cache("https://draft.premierleague.com/api/bootstrap-static", "draft_bootstrap")
+    fetch_fpl_with_cache("https://fantasy.premierleague.com/api/bootstrap-static/", 
+                         "classic_bootstrap", update_bootstrap=True)
+    fetch_fpl_with_cache("https://draft.premierleague.com/api/bootstrap-static", 
+                         "draft_bootstrap", update_bootstrap=True)
 
     # GW points for all finished GWs up to latest
     for gw in range(1, current_latest_gw + 1):
@@ -100,52 +105,54 @@ def update_global_cache():
 
 
 def update_league_cache(league_id):
+    print("DEBUG INSIDE UPDATE LEAGUE CACHE DEF")
     # fetch league details
     url = f"https://draft.premierleague.com/api/league/{league_id}/details"
     response = urlopen(url)
     league_details = json.loads(response.read())
 
     league_scoring_mode = league_details['league']['scoring']
+    # only support for head to head leagues
     if league_scoring_mode != 'h':
-        h2h_ind = False
+        cache_outcome = "not_h2h_league"
         print(f"League {league_id} is not head-to-head. Skipping cache update.")
-        return h2h_ind
+        return cache_outcome
 
-    # --- Step 2: determine latest finished GW for this league ---
-    finished_gws = [m['event'] for m in league_details['matches'] if m['finished']]
-    current_latest_gw = max(finished_gws) if finished_gws else None
+    # get latest finished GW for this league id stored in cache
     cached_latest_gw = get_cached_latest_gw(league_id)
-
     first_time = cached_latest_gw is None
-
-    if not first_time and cached_latest_gw == current_latest_gw:
-        print(f"⏩ League {league_id}: no new GW finished (still GW {current_latest_gw}). Skipping update.")
-        return
-
     if first_time:
-        print(f"🆕 First time caching league {league_id} → fetching all data.")
+        print(f"First time caching league {league_id} → fetching all data.")
+        finished_gws = []
+        current_latest_gw = 0
+    else: 
+        # we have some data for this league id
+        # get latest finished week from api and compare it to cached data
+        finished_gws = [m['event'] for m in league_details['matches'] if m['finished']]
+        current_latest_gw = max(finished_gws) if finished_gws else None
 
-    # --- Step 3: cache league details ---
+        if cached_latest_gw == current_latest_gw: 
+            # no new data available for this league
+            print(f"League {league_id}: no new GW finished (still GW {current_latest_gw}")
+            return
+
+    
+    # cache league details
     cache_file = os.path.join(CACHE_DIR, f"draft_league_{league_id}_details.json")
     with open(cache_file, "w") as f:
         json.dump(league_details, f)
 
-    # --- Step 4: cache picks for all finished GWs ---
+    # cache picks for all finished GWs
     for entry in league_details['league_entries']:
         entry_id = entry['entry_id']
         # TODO odd numbers of players cause the average gw score be used to make up the numbers
-        if entry_id is None:
-            continue # dont save to cache
-        for gw in finished_gws:
-            fetch_fpl_with_cache(
-                f"https://draft.premierleague.com/api/entry/{entry_id}/event/{gw}",
-                cache_key=f"draft_entry_{entry_id}_gw_{gw}"
-            )
+        if entry_id is not None:
+            # continue # dont save to cache
+            for gw in finished_gws:
+                fetch_fpl_with_cache(f"https://draft.premierleague.com/api/entry/{entry_id}/event/{gw}",
+                                    cache_key=f"draft_entry_{entry_id}_gw_{gw}")
 
-    # --- Step 5: update global caches (only if new global GW) ---
-    update_global_cache()
-
-    # --- Step 6: update league marker ---
+    # update league marker
     set_cached_latest_gw(league_id, current_latest_gw)
 
     print(f"✅ Cache updated for league {league_id} (latest GW = {current_latest_gw})")
@@ -182,13 +189,16 @@ class FPLCacheUpdater(Thread):
 
     def request_update(self, league_id):
         if league_id not in self.queue:
+            print(league_id)
             self.queue.append(league_id)
 
-# --- singleton instance ---
-cache_updater = FPLCacheUpdater()
-cache_updater.start()
 
 # call this in routes.py when a new league_id is submitted
 def enqueue_league_cache_update(league_id):
     cache_updater.request_update(league_id)
 
+ensure_cache_dir()
+
+# --- singleton instance ---
+cache_updater = FPLCacheUpdater()
+cache_updater.start()

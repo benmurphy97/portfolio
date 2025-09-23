@@ -43,6 +43,13 @@ def chart():
         return redirect(url_for('inputLeagueID'))
     
     league_cache_file = f"cache/draft_league_{league_id}_details.json"
+    cache_outcome = enqueue_league_cache_update(league_id)
+
+    if cache_outcome == 'not_h2h_league':
+        flash(f"The League ID enterred does not use head to head scoring. \
+              Try again with a different League ID.")
+        return redirect(url_for('inputLeagueID'))
+
 
     if not os.path.exists(league_cache_file):
         # this is a new league_id
